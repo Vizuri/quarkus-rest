@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: quarkus-rest-build-and-deploy
+spec:
+  resources:
+    - name: quarkus-rest-git
+      type: git
+    - name: quarkus-rest-image
+      type: image
+  tasks:
+    - name: quarkus-rest-build
+      taskRef:
+        name: quarkus-build-from-git
+        kind: Task
+      resources:
+        inputs:
+          - name: git-source
+            resource: quarkus-rest-git
+        outputs:
+          - name: image
+            resource: quarkus-rest-image
+      params:
+        - name: mavenMirrorUrl
+          value: "https://repo1.maven.org/maven2"
+        - name: mavenCmdArgs
+          value: "-DskipTests clean install -Pnative"
+        - name: runScript
+          value: "/usr/local/bin/maven-run.sh"

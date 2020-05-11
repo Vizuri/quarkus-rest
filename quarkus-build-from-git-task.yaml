@@ -1,0 +1,77 @@
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: quarkus-build-from-git
+spec:
+  inputs:
+    params:
+      - name: contextDir
+        default: "/workspace/git-source"
+        description: The Docker build context Dir
+        type: string
+      - name: mavenMirrorUrl
+        default: "https://repo1.maven.org/maven2"
+        description: The MAVEN_MIRROR_URL url to use
+        type: string
+      - name: mavenCmdArgs
+        default: "-DskipTests install -Pnative"
+        description: The maven command parameter
+        type: string
+      - name: runScript
+        default: "/usr/local/bin/maven-run.sh"
+        description: The script to use during 
+        type: string
+      - name: manifest_dir
+        default: "src/main/kubefiles"
+        description: The folder containing openshift manifests
+        type: string
+      - name: push
+        default: "true"
+        description: Whether to push the image to container registry or not
+        type: string
+      - name: DOCKERFILE
+        description: Path to the Dockerfile to build.
+        default: ./src/main/docker/Dockerfile.build
+      - name: TLSVERIFY
+        description: Verify the TLS on the registry endpoint (for push/pull to a non-TLS registry)
+        default: "false"
+    resources:
+      - name: git-source
+        type: git
+  outputs:
+    resources:
+    - name: image
+      type: image
+  steps:
+    - name: build-container
+      image: quay.io/buildah/stable:v1.11.0
+      workingDir: /workspace/git-source
+      command: ['buildah', 'bud', '--tls-verify=$(inputs.params.TLSVERIFY)', '--layers', '-f', '$(inputs.params.DOCKERFILE)', '-t', '$(outputs.resources.image.url)', '.']
+      volumeMounts:
+      - name: varlibcontainers
+        mountPath: /var/lib/containers
+      securityContext:
+        privileged: true
+
+    - name: push-container
+      image: quay.io/buildah/stable:v1.11.0
+      workingDir: /workspace/git-source
+      command: ['buildah', 'push', '--tls-verify=$(inputs.params.TLSVERIFY)', '$(outputs.resources.image.url)', 'docker://$(outputs.resources.image.url)']
+      volumeMounts:
+      - name: varlibcontainers
+        mountPath: /var/lib/containers
+      securityContext:
+        privileged: true
+    - name: apply-manifests
+      image: quay.io/openshift/origin-cli:latest
+      workingDir: /workspace/git-source
+      command: ["/bin/bash", "-c"]
+      args:
+        - |-
+          echo Applying manifests in $(inputs.params.manifest_dir) directory
+          oc apply -f $(inputs.params.manifest_dir)
+          echo -----------------------------------
+
+  volumes:
+  - name: varlibcontainers
+    emptyDir: {}
